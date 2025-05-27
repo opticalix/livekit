@@ -251,8 +251,9 @@ type DowntrackParams struct {
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
-	params            DowntrackParams
-	id                livekit.TrackID
+    params            DowntrackParams
+    id                livekit.TrackID
+    frameProcessor    processing.FrameProcessor
 	kind              webrtc.RTPCodecType
 	ssrc              uint32
 	ssrcRTX           uint32
@@ -369,6 +370,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		keyFrameRequesterCh: make(chan struct{}, 1),
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
+		frameProcessor:      processing.NewSimpleProcessor(params.Logger),
 	}
 	codec := codecs[0].RTPCodecCapability
 	d.codec.Store(codec)
@@ -954,6 +956,41 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 
 // WriteRTP writes an RTP Packet to the DownTrack
 func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
+    if d.kind == webrtc.RTPCodecTypeVideo && d.frameProcessor != nil {
+        processed, err := d.frameProcessor.ProcessFrame(context.Background(), &processing.ProcessRequest{
+            RawFrame:     extPkt.Packet.Payload,
+            Timestamp:    extPkt.Packet.Timestamp,
+            OutputFormat: processing.Format3D,
+            Params: processing.ProcessingParams{
+                Disparity:   30,
+                PopoutRatio: 0.5,
+                TargetRes:   processing.Resolution{
+                    Width:  d.forwarder.maxLayer.Width,
+                    Height: d.forwarder.maxLayer.Height,
+                },
+            },
+        })
+        if err == nil {
+            extPkt.Packet.Payload = processed.Data
+        }
+    }
+
+    // // 视频处理1
+    // if d.kind == webrtc.RTPCodecTypeVideo && d.frameProcessor != nil {
+    //     processed, err := d.frameProcessor.ProcessFrame(extPkt.Packet, &processing.ProcessRequest{
+    //         RawFrame:     extPkt.Packet.Payload,
+    //         Timestamp:    extPkt.Packet.Timestamp,
+    //         OutputFormat: processing.Format3D,
+    //         Params: processing.ProcessingParams{
+    //             Disparity:   d.configManager.GetCurrentConfig().DefaultDisparity,
+    //             PopoutRatio: 1.0,
+    //             TargetRes:   processing.Resolution{Width: 1920, Height: 1080},
+    //         },
+    //     })
+    //     if err == nil {
+    //         extPkt.Packet.Payload = processed.Data
+    //     }
+    // }
 	if !d.writable.Load() {
 		return nil
 	}
@@ -977,10 +1014,30 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 	payload = payload[:len(tp.codecBytes)+n]
 
-	// translate RTP header
-	hdr := &rtp.Header{
-		Version:        extPkt.Packet.Version,
-		Padding:        extPkt.Packet.Padding,
+    // 原始帧处理2
+    // rawFrame := extPkt.Packet.Payload[tp.incomingHeaderSize:]
+    // processed, err := d.frameProcessor.ProcessFrame(d.ctx, &processing.ProcessRequest{
+    //     RawFrame:     rawFrame,
+    //     Timestamp:    extPkt.Packet.Timestamp,
+    //     OutputFormat: d.configManager.GetCurrentConfig().OutputFormat,
+    //     Params: processing.ProcessingParams{
+    //         Disparity:   d.configManager.GetCurrentConfig().DefaultDisparity,
+    //         PopoutRatio: 1.0,
+    //         TargetRes: processing.Resolution{
+    //             Width:  d.forwarder.maxLayer.Width,
+    //             Height: d.forwarder.maxLayer.Height,
+    //         },
+    //     },
+    // })
+    // if err != nil {
+    //     d.params.Logger.Errorw("frame processing failed", err)
+    //     return nil
+    // }
+
+    // translate RTP header
+    hdr := &rtp.Header{
+        Version:        extPkt.Packet.Version, 
+        Padding:        extPkt.Packet.Padding,
 		PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType),
 		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
 		Timestamp:      uint32(tp.rtp.extTimestamp),
