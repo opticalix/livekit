@@ -48,6 +48,12 @@ const (
 	Format3D
 )
 
+// ProcessResponse 定义处理响应结构体
+type ProcessResponse struct {
+    Data      []byte
+    Timestamp uint32
+}
+
 // 实现示例
 type SimpleProcessor struct {
 	logger logger.Logger
@@ -62,7 +68,7 @@ func NewSimpleProcessor(logger logger.Logger) *SimpleProcessor {
 func (p *SimpleProcessor) ProcessFrame(ctx context.Context, req *ProcessRequest) (*ProcessResponse, error) {
 	// 简单颜色翻转处理（假设原始数据是RGB24格式）
 	if len(req.RawFrame)%3 != 0 {
-		p.logger.Warnw("invalid frame length for RGB24 format", "length", len(req.RawFrame))
+		p.logger.Warnw("invalid frame length for RGB24 format", errors.New("raw frame length invalid"))
 		return nil, errors.New("invalid frame format")
 	}
 

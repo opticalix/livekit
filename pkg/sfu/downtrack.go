@@ -47,6 +47,7 @@ import (
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/processing"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -965,8 +966,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
                 Disparity:   30,
                 PopoutRatio: 0.5,
                 TargetRes:   processing.Resolution{
-                    Width:  d.forwarder.maxLayer.Width,
-                    Height: d.forwarder.maxLayer.Height,
+                    Width:  1080,
+                    Height: 1920,
                 },
             },
         })
