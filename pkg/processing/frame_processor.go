@@ -13,7 +13,7 @@ type FrameProcessor interface {
 
 type ProcessRequest struct {
 	RawFrame     []byte
-	Timestamp    int64
+	Timestamp    uint32
 	OutputFormat OutputFormat
 	Params       ProcessingParams
 }
@@ -65,7 +65,7 @@ func NewSimpleProcessor(logger logger.Logger) *SimpleProcessor {
 	}
 }
 
-func (p *SimpleProcessor) ProcessFrame(ctx context.Context, req *ProcessRequest) (*ProcessResponse, error) {
+func (p *SimpleProcessor) ProcessFrame(req *ProcessRequest) (*ProcessResponse, error) {
 	// 简单颜色翻转处理（假设原始数据是RGB24格式）
 	if len(req.RawFrame)%3 != 0 {
 		p.logger.Warnw("invalid frame length for RGB24 format", errors.New("raw frame length invalid"))
@@ -96,7 +96,7 @@ func NewDefaultProcessor(configMgr ConfigManager) *DefaultProcessor {
 	}
 }
 
-func (p *DefaultProcessor) ProcessFrame(ctx context.Context, req *ProcessRequest) (*ProcessResponse, error) {
+func (p *DefaultProcessor) ProcessFrame(req *ProcessRequest) (*ProcessResponse, error) {
 	cfg := p.configMgr.GetCurrentConfig()
 	
 	// 实现2D转3D处理逻辑
