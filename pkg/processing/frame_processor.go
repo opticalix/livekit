@@ -65,7 +65,7 @@ func NewSimpleProcessor(logger logger.Logger) *SimpleProcessor {
 	}
 }
 
-func (p *SimpleProcessor) ProcessFrame(ctx context.Context, req *ProcessRequest) (*ProcessResponse, error) {
+func (p *SimpleProcessor) ProcessFrame(req *ProcessRequest) (*ProcessResponse, error) {
 	// 简单颜色翻转处理（假设原始数据是RGB24格式）
 	if len(req.RawFrame)%3 != 0 {
 		p.logger.Warnw("invalid frame length for RGB24 format", errors.New("raw frame length invalid"))

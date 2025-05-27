@@ -1009,7 +1009,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		// 校验数据长度
 		if expectedLen := len(tp.codecBytes) + len(processed.Data); len(payload) != expectedLen {
 			d.params.Logger.Errorw("payload size mismatch",
-				"actual payload size", errors.New(len(payload)),
+				errors.New("payload size mismatch"),
 			)
 			PacketFactory.Put(poolEntity)
 			return ErrPayloadSizeMismatch
