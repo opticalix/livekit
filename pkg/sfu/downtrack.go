@@ -102,6 +102,7 @@ var (
 	ErrDownTrackAlreadyBound             = errors.New("already bound")
 	ErrPayloadOverflow                   = errors.New("payload overflow")
 	ErrFrameProcess                      = errors.New("frame process fail")
+	ErrPayloadSizeMismatch 				 = errors.New("payload size mismatch")
 )
 
 var (
@@ -999,159 +1000,158 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.params.Logger.Errorw("frame process", nil, err)
 			return ErrFrameProcess
         }
-    } else {
-		return nil
-	}
-	// 重新组装payload：codec头 + 处理后的数据
-	payload = payload[:len(tp.codecBytes)] // 保留codec头
-	n := copy(payload[len(tp.codecBytes):], processed.Data) // 填充处理结果
-	payload = payload[:len(tp.codecBytes)+n] // 重置长度
-	
-	// 校验数据长度
-	if expectedLen := len(tp.codecBytes) + len(processed.Data); len(payload) != expectedLen {
-		d.params.Logger.Errorw("payload size mismatch",
-			"expected", expectedLen,
-			"actual", len(payload),
-		)
-		PacketFactory.Put(poolEntity)
-		return ErrPayloadSizeMismatch
-	}
 
-	// // 拷贝有效负载数据，跳过原始包的头部
-	// n := copy(payload[len(tp.codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
-	// if n != len(extPkt.Packet.Payload[tp.incomingHeaderSize:]) {
-	// 	// 处理负载溢出异常
-	// 	d.params.Logger.Errorw("payload overflow", nil, "want", len(extPkt.Packet.Payload[tp.incomingHeaderSize:]), "have", n)
-	// 	PacketFactory.Put(poolEntity)
-	// 	return ErrPayloadOverflow
-	// }
-	// // 调整payload长度
-	// payload = payload[:len(tp.codecBytes)+n]
-
-	// 构建新的RTP头部
-    // translate RTP header
-    hdr := &rtp.Header{
-        Version:        extPkt.Packet.Version, 
-        Padding:        extPkt.Packet.Padding,
-		PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType),// 转换payload类型（如VP8->H264）
-		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
-		Timestamp:      uint32(tp.rtp.extTimestamp),
-		SSRC:           d.ssrc,
-	}
-	if tp.marker {
-		hdr.Marker = tp.marker// 保留标记位（视频帧结束标识）
-	}
-
-	// 扩展处理逻辑
-	// add extensions
-	// 1. 依赖描述符扩展（用于SVC分层视频）
-	if d.dependencyDescriptorExtID != 0 && tp.ddBytes != nil {
-		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), tp.ddBytes)
-	}
-	// 2. 播放延迟扩展
-	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
-		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
-			hdr.SetExtension(uint8(d.playoutDelayExtID), val)
-
-			// NOTE: play out delay extension is not cached in sequencer,
-			// i. e. they will not be added to retransmitted packet.
-			// But, it is okay as the extension is added till a RTCP Receiver Report for
-			// the corresponding sequence number is received.
-			// The extreme case is all packets containing the play out delay are lost and
-			// all of them retransmitted and an RTCP Receiver Report received for those
-			// retransmitted sequence numbers. But, that is highly improbable, if not impossible.
+		// 重新组装payload：codec头 + 处理后的数据
+		payload = payload[:len(tp.codecBytes)] // 保留codec头
+		n := copy(payload[len(tp.codecBytes):], processed.Data) // 填充处理结果
+		payload = payload[:len(tp.codecBytes)+n] // 重置长度
+		
+		// 校验数据长度
+		if expectedLen := len(tp.codecBytes) + len(processed.Data); len(payload) != expectedLen {
+			d.params.Logger.Errorw("payload size mismatch",
+				"actual payload size", errors.New(len(payload)),
+			)
+			PacketFactory.Put(poolEntity)
+			return ErrPayloadSizeMismatch
 		}
-	}
-	// 3. 绝对捕获时间扩展处理
-	var actBytes []byte
-	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
-		// normalize capture time to SFU clock.
-		// NOTE: even if there is estimated offset populated, just re-map the
-		// absolute capture time stamp as it should be the same RTCP sender report
-		// clock domain of publisher. SFU is normalising sender reports of publisher
-		// to SFU clock before sending to subscribers. So, capture time should be
-		// normalized to the same clock. Clear out any offset.
-		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
-		if refSenderReport != nil {
-			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(
-				rtpstats.RTCPSenderReportPropagationDelay(
-					refSenderReport,
-					!d.params.DisableSenderReportPassThrough,
-				),
-			); err == nil {
-				actBytes, err = actExtCopy.Marshal()
-				if err == nil {
-					hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+
+		// // 拷贝有效负载数据，跳过原始包的头部
+		// n := copy(payload[len(tp.codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
+		// if n != len(extPkt.Packet.Payload[tp.incomingHeaderSize:]) {
+		// 	// 处理负载溢出异常
+		// 	d.params.Logger.Errorw("payload overflow", nil, "want", len(extPkt.Packet.Payload[tp.incomingHeaderSize:]), "have", n)
+		// 	PacketFactory.Put(poolEntity)
+		// 	return ErrPayloadOverflow
+		// }
+		// // 调整payload长度
+		// payload = payload[:len(tp.codecBytes)+n]
+
+		// 构建新的RTP头部
+		// translate RTP header
+		hdr := &rtp.Header{
+			Version:        extPkt.Packet.Version, 
+			Padding:        extPkt.Packet.Padding,
+			PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType),// 转换payload类型（如VP8->H264）
+			SequenceNumber: uint16(tp.rtp.extSequenceNumber),
+			Timestamp:      uint32(tp.rtp.extTimestamp),
+			SSRC:           d.ssrc,
+		}
+		if tp.marker {
+			hdr.Marker = tp.marker// 保留标记位（视频帧结束标识）
+		}
+
+		// 扩展处理逻辑
+		// add extensions
+		// 1. 依赖描述符扩展（用于SVC分层视频）
+		if d.dependencyDescriptorExtID != 0 && tp.ddBytes != nil {
+			hdr.SetExtension(uint8(d.dependencyDescriptorExtID), tp.ddBytes)
+		}
+		// 2. 播放延迟扩展
+		if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
+			if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
+				hdr.SetExtension(uint8(d.playoutDelayExtID), val)
+
+				// NOTE: play out delay extension is not cached in sequencer,
+				// i. e. they will not be added to retransmitted packet.
+				// But, it is okay as the extension is added till a RTCP Receiver Report for
+				// the corresponding sequence number is received.
+				// The extreme case is all packets containing the play out delay are lost and
+				// all of them retransmitted and an RTCP Receiver Report received for those
+				// retransmitted sequence numbers. But, that is highly improbable, if not impossible.
+			}
+		}
+		// 3. 绝对捕获时间扩展处理
+		var actBytes []byte
+		if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
+			// normalize capture time to SFU clock.
+			// NOTE: even if there is estimated offset populated, just re-map the
+			// absolute capture time stamp as it should be the same RTCP sender report
+			// clock domain of publisher. SFU is normalising sender reports of publisher
+			// to SFU clock before sending to subscribers. So, capture time should be
+			// normalized to the same clock. Clear out any offset.
+			_, _, refSenderReport := d.forwarder.GetSenderReportParams()
+			if refSenderReport != nil {
+				actExtCopy := *extPkt.AbsCaptureTimeExt
+				if err = actExtCopy.Rewrite(
+					rtpstats.RTCPSenderReportPropagationDelay(
+						refSenderReport,
+						!d.params.DisableSenderReportPassThrough,
+					),
+				); err == nil {
+					actBytes, err = actExtCopy.Marshal()
+					if err == nil {
+						hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+					}
 				}
 			}
 		}
-	}
-	d.addDummyExtensions(hdr)
+		d.addDummyExtensions(hdr)
 
-	// 序列记录（用于NACK重传）
-	if d.sequencer != nil {
-		d.sequencer.push(
+		// 序列记录（用于NACK重传）
+		if d.sequencer != nil {
+			d.sequencer.push(
+				extPkt.Arrival,
+				extPkt.ExtSequenceNumber,
+				tp.rtp.extSequenceNumber,
+				tp.rtp.extTimestamp,
+				hdr.Marker,
+				int8(layer),
+				payload[:len(tp.codecBytes)],
+				tp.incomingHeaderSize,
+				tp.ddBytes,
+				actBytes,
+			)
+		}
+
+		// 统计更新
+		headerSize := hdr.MarshalSize()
+		d.rtpStats.Update(
 			extPkt.Arrival,
-			extPkt.ExtSequenceNumber,
 			tp.rtp.extSequenceNumber,
 			tp.rtp.extTimestamp,
 			hdr.Marker,
-			int8(layer),
-			payload[:len(tp.codecBytes)],
-			tp.incomingHeaderSize,
-			tp.ddBytes,
-			actBytes,
+			headerSize,
+			len(payload),
+			0,
+			extPkt.IsOutOfOrder,
 		)
-	}
+		// 将包加入发送调度器（流量整形）
+		d.pacer.Enqueue(&pacer.Packet{
+			Header:             hdr,
+			HeaderSize:         headerSize,
+			Payload:            payload,
+			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
+			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+			TransportWideExtID: uint8(d.transportWideExtID),
+			WriteStream:        d.writeStream,
+			Pool:               PacketFactory,
+			PoolEntity:         poolEntity,
+		})
 
-	// 统计更新
-	headerSize := hdr.MarshalSize()
-	d.rtpStats.Update(
-		extPkt.Arrival,
-		tp.rtp.extSequenceNumber,
-		tp.rtp.extTimestamp,
-		hdr.Marker,
-		headerSize,
-		len(payload),
-		0,
-		extPkt.IsOutOfOrder,
-	)
-	// 将包加入发送调度器（流量整形）
-	d.pacer.Enqueue(&pacer.Packet{
-		Header:             hdr,
-		HeaderSize:         headerSize,
-		Payload:            payload,
-		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
-		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-		TransportWideExtID: uint8(d.transportWideExtID),
-		WriteStream:        d.writeStream,
-		Pool:               PacketFactory,
-		PoolEntity:         poolEntity,
-	})
-
-	// 关键帧处理
-	if extPkt.KeyFrame {
-		d.isNACKThrottled.Store(false)
-		d.rtpStats.UpdateKeyFrame(1)
-		d.params.Logger.Debugw(
-			"forwarded key frame",
-			"layer", layer,
-			"rtpsn", tp.rtp.extSequenceNumber,
-			"rtpts", tp.rtp.extTimestamp,
-		)
-	}
-
-	// 事件通知
-	if tp.isSwitching {
-		d.postMaxLayerNotifierEvent("switching")
-	}
-
-	if tp.isResuming {
-		if sal := d.getStreamAllocatorListener(); sal != nil {
-			sal.OnResume(d)
+		// 关键帧处理
+		if extPkt.KeyFrame {
+			d.isNACKThrottled.Store(false)
+			d.rtpStats.UpdateKeyFrame(1)
+			d.params.Logger.Debugw(
+				"forwarded key frame",
+				"layer", layer,
+				"rtpsn", tp.rtp.extSequenceNumber,
+				"rtpts", tp.rtp.extTimestamp,
+			)
 		}
-	}
+
+		// 事件通知
+		if tp.isSwitching {
+			d.postMaxLayerNotifierEvent("switching")
+		}
+
+		if tp.isResuming {
+			if sal := d.getStreamAllocatorListener(); sal != nil {
+				sal.OnResume(d)
+			}
+		}
+		return nil
+    }
 	return nil
 }
 
