@@ -69,28 +69,32 @@ func (p *SimpleProcessor) ProcessFrame(req *ProcessRequest) (*ProcessResponse, e
 	rawLen := len(req.RawFrame)
 	p.logger.Infow("simple process frame", "frame length", rawLen)
 	
-    targetRes := req.Params.TargetRes
-    width, height := targetRes.Width, targetRes.Height
-    ySize := width * height
-    uvSize := (width/2) * (height/2)
-    expectedSize := ySize + uvSize*2
-	p.logger.Infow("simple process frame", "expectedSize", expectedSize)
+    // targetRes := req.Params.TargetRes
+    // width, height := targetRes.Width, targetRes.Height
+    // ySize := width * height
+    // uvSize := (width/2) * (height/2)
+    // expectedSize := ySize + uvSize*2
+	// p.logger.Infow("simple process frame", "expectedSize", expectedSize)
 
-	if rawLen != expectedSize {
-		p.logger.Warnw("invalid frame length", errors.New("raw frame length invalid"))
-		return nil, errors.New("invalid frame format")
-	}
+	// if rawLen != expectedSize {
+	// 	p.logger.Warnw("invalid frame length", errors.New("raw frame length invalid"))
+	// 	return nil, errors.New("invalid frame format")
+	// }
 
 	processed := make([]byte, rawLen)
-    yPlane := req.RawFrame[:ySize]
+	for i := 0; i < rawLen; i++ {
+		processed[i] = req.RawFrame[i] / 2
+	}
+
+    // yPlane := req.RawFrame[:ySize]
     // uPlane := req.RawFrame[ySize : ySize+uvSize]
     // vPlane := req.RawFrame[ySize+uvSize:]
 	
 	// 仅反转亮度平面（黑白负片效果）
-	for i := 0; i < ySize; i++ {
-		processed[i] = 255 - yPlane[i]
-	}
-	copy(processed[ySize:], req.RawFrame[ySize:])
+	// for i := 0; i < ySize; i++ {
+	// 	processed[i] = 255 - yPlane[i]
+	// }
+	// copy(processed[ySize:], req.RawFrame[ySize:])
 
 	return &ProcessResponse{
 		Data:      processed,
