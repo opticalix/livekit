@@ -65,19 +65,32 @@ func NewSimpleProcessor(logger logger.Logger) *SimpleProcessor {
 }
 
 func (p *SimpleProcessor) ProcessFrame(req *ProcessRequest) (*ProcessResponse, error) {
-	// 简单颜色翻转处理（假设原始数据是RGB24格式）
-	if len(req.RawFrame)%3 != 0 {
-		p.logger.Warnw("invalid frame length for RGB24 format", errors.New("raw frame length invalid"))
+	// 简单颜色翻转处理
+	rawLen := len(req.RawFrame)
+	p.logger.Infow("simple process frame", "frame length", rawLen)
+	
+    targetRes := req.Params.TargetRes
+    width, height := targetRes.Width, targetRes.Height
+    ySize := width * height
+    uvSize := (width/2) * (height/2)
+    expectedSize := ySize + uvSize*2
+	p.logger.Infow("simple process frame", "expectedSize", expectedSize)
+
+	if rawLen != expectedSize {
+		p.logger.Warnw("invalid frame length", errors.New("raw frame length invalid"))
 		return nil, errors.New("invalid frame format")
 	}
 
-	processed := make([]byte, len(req.RawFrame))
-	for i := 0; i < len(req.RawFrame); i += 3 {
-		// 翻转RGB通道
-		processed[i]   = 255 - req.RawFrame[i]   // R
-		processed[i+1] = 255 - req.RawFrame[i+1] // G
-		processed[i+2] = 255 - req.RawFrame[i+2] // B
+	processed := make([]byte, rawLen)
+    yPlane := req.RawFrame[:ySize]
+    uPlane := req.RawFrame[ySize : ySize+uvSize]
+    vPlane := req.RawFrame[ySize+uvSize:]
+	
+	// 仅反转亮度平面（黑白负片效果）
+	for i := 0; i < ySize; i++ {
+		processed[i] = 255 - yPlane[i]
 	}
+	copy(processed[ySize:], req.RawFrame[ySize:])
 
 	return &ProcessResponse{
 		Data:      processed,
