@@ -983,6 +983,25 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
     if d.kind == webrtc.RTPCodecTypeVideo && d.frameProcessor != nil {
 		// 提取原始媒体数据（跳过包头）
 		rawMediaData := extPkt.Packet.Payload[tp.incomingHeaderSize:]
+		
+		// incomingHeaderSize = 0!
+		d.params.Logger.Infow("incomingHeaderSize", "incomingHeaderSize", tp.incomingHeaderSize)
+		d.params.Logger.Infow("extPkt.Packet.Payload", "extPkt.Packet.Payload", len(extPkt.Packet.Payload))
+		d.params.Logger.Infow("rawMediaData", "rawMediaData", len(rawMediaData))
+		d.params.Logger.Infow("TranslationParams",
+			"shouldDrop", tp.shouldDrop,
+			"isResuming", tp.isResuming,
+			"isSwitching", tp.isSwitching,
+			// 展开TranslationParamsRTP字段
+			"rtp_snOrdering", tp.rtp.snOrdering,
+			"rtp_extSequenceNumber", tp.rtp.extSequenceNumber,
+			"rtp_extTimestamp", tp.rtp.extTimestamp,
+			
+			"ddBytes_len", len(tp.ddBytes),
+			"incomingHeaderSize", tp.incomingHeaderSize,
+			"codecBytes_len", len(tp.codecBytes),
+			"marker", tp.marker,
+		)
         processed, err := d.frameProcessor.ProcessFrame(&processing.ProcessRequest{
             RawFrame:     rawMediaData,//payload
             Timestamp:    extPkt.Packet.Timestamp,
