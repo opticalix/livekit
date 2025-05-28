@@ -83,8 +83,8 @@ func (p *SimpleProcessor) ProcessFrame(req *ProcessRequest) (*ProcessResponse, e
 
 	processed := make([]byte, rawLen)
     yPlane := req.RawFrame[:ySize]
-    uPlane := req.RawFrame[ySize : ySize+uvSize]
-    vPlane := req.RawFrame[ySize+uvSize:]
+    // uPlane := req.RawFrame[ySize : ySize+uvSize]
+    // vPlane := req.RawFrame[ySize+uvSize:]
 	
 	// 仅反转亮度平面（黑白负片效果）
 	for i := 0; i < ySize; i++ {
