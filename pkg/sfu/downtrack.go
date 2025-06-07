@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 
+	"github.com/livekit/livekit-server/pkg/processing"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -47,7 +48,6 @@ import (
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
-	"github.com/livekit/livekit-server/pkg/processing"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -102,7 +102,7 @@ var (
 	ErrDownTrackAlreadyBound             = errors.New("already bound")
 	ErrPayloadOverflow                   = errors.New("payload overflow")
 	ErrFrameProcess                      = errors.New("frame process fail")
-	ErrPayloadSizeMismatch 				 = errors.New("payload size mismatch")
+	ErrPayloadSizeMismatch               = errors.New("payload size mismatch")
 )
 
 var (
@@ -254,9 +254,9 @@ type DowntrackParams struct {
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
-    params            DowntrackParams
-    id                livekit.TrackID
-    frameProcessor    processing.FrameProcessor
+	params            DowntrackParams
+	id                livekit.TrackID
+	frameProcessor    processing.FrameProcessor
 	kind              webrtc.RTPCodecType
 	ssrc              uint32
 	ssrcRTX           uint32
@@ -973,17 +973,49 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
+	// 如果是视频流，进行帧处理
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		// 创建RTP包
+		rtpPacket := &rtp.Packet{
+			Header: rtp.Header{
+				Version:        2,
+				Padding:        false,
+				Extension:      false,
+				Marker:         extPkt.Packet.Marker,
+				PayloadType:    extPkt.Packet.PayloadType,
+				SequenceNumber: extPkt.Packet.SequenceNumber,
+				Timestamp:      extPkt.Packet.Timestamp,
+				SSRC:           d.ssrc,
+			},
+			Payload: extPkt.Packet.Payload,
+		}
+
+		// 处理RTP包
+		if d.frameProcessor != nil {
+			response, err := d.frameProcessor.ProcessRTP(rtpPacket)
+			if err != nil {
+				d.params.Logger.Errorw("failed to process RTP packet", err)
+				return err
+			}
+			if response != nil {
+				// 使用处理后的数据
+				rtpPacket.Payload = response.Data
+				rtpPacket.Timestamp = response.Timestamp
+			}
+		}
+	}
+
 	// 从对象池获取内存块，用于组装最终的RTP负载
 	poolEntity := PacketFactory.Get().(*[]byte)
 	payload := *poolEntity
 	// 拷贝编码器特定字节（如H264的SPS/PPS）
 	copy(payload, tp.codecBytes)
-	
+
 	// 帧处理
-    if d.kind == webrtc.RTPCodecTypeVideo && d.frameProcessor != nil {
+	if d.kind == webrtc.RTPCodecTypeVideo && d.frameProcessor != nil {
 		// 提取原始媒体数据（跳过包头）
 		rawMediaData := extPkt.Packet.Payload[tp.incomingHeaderSize:]
-		
+
 		// incomingHeaderSize = 0!
 		d.params.Logger.Infow("incomingHeaderSize", "incomingHeaderSize", tp.incomingHeaderSize)
 		d.params.Logger.Infow("extPkt.Packet.Payload", "extPkt.Packet.Payload", len(extPkt.Packet.Payload))
@@ -996,35 +1028,35 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			"rtp_snOrdering", tp.rtp.snOrdering,
 			"rtp_extSequenceNumber", tp.rtp.extSequenceNumber,
 			"rtp_extTimestamp", tp.rtp.extTimestamp,
-			
+
 			"ddBytes_len", len(tp.ddBytes),
 			"incomingHeaderSize", tp.incomingHeaderSize,
 			"codecBytes_len", len(tp.codecBytes),
 			"marker", tp.marker,
 		)
-        processed, err := d.frameProcessor.ProcessFrame(&processing.ProcessRequest{
-            RawFrame:     rawMediaData,//payload
-            Timestamp:    extPkt.Packet.Timestamp,
-            OutputFormat: processing.Format3D,
-            Params: processing.ProcessingParams{
-                Disparity:   30,
-                PopoutRatio: 0.5,
-                TargetRes:   processing.Resolution{
-                    Width:  1080,//FIXME
-                    Height: 1920,//FIXME
-                },
-            },
-        })
-        if err != nil {
+		processed, err := d.frameProcessor.ProcessFrame(&processing.ProcessRequest{
+			RawFrame:     rawMediaData, //payload
+			Timestamp:    extPkt.Packet.Timestamp,
+			OutputFormat: processing.Format3D,
+			Params: processing.ProcessingParams{
+				Disparity:   30,
+				PopoutRatio: 0.5,
+				TargetRes: processing.Resolution{
+					Width:  1080, //FIXME
+					Height: 1920, //FIXME
+				},
+			},
+		})
+		if err != nil {
 			d.params.Logger.Errorw("frame process", nil, err)
 			return ErrFrameProcess
-        }
+		}
 
 		// 重新组装payload：codec头 + 处理后的数据
-		payload = payload[:len(tp.codecBytes)] // 保留codec头
+		payload = payload[:len(tp.codecBytes)]                  // 保留codec头
 		n := copy(payload[len(tp.codecBytes):], processed.Data) // 填充处理结果
-		payload = payload[:len(tp.codecBytes)+n] // 重置长度
-		
+		payload = payload[:len(tp.codecBytes)+n]                // 重置长度
+
 		// 校验数据长度
 		if expectedLen := len(tp.codecBytes) + len(processed.Data); len(payload) != expectedLen {
 			d.params.Logger.Errorw("payload size mismatch",
@@ -1048,15 +1080,15 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		// 构建新的RTP头部
 		// translate RTP header
 		hdr := &rtp.Header{
-			Version:        extPkt.Packet.Version, 
+			Version:        extPkt.Packet.Version,
 			Padding:        extPkt.Packet.Padding,
-			PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType),// 转换payload类型（如VP8->H264）
+			PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType), // 转换payload类型（如VP8->H264）
 			SequenceNumber: uint16(tp.rtp.extSequenceNumber),
 			Timestamp:      uint32(tp.rtp.extTimestamp),
 			SSRC:           d.ssrc,
 		}
 		if tp.marker {
-			hdr.Marker = tp.marker// 保留标记位（视频帧结束标识）
+			hdr.Marker = tp.marker // 保留标记位（视频帧结束标识）
 		}
 
 		// 扩展处理逻辑
@@ -1170,7 +1202,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			}
 		}
 		return nil
-    }
+	}
 	return nil
 }
 
