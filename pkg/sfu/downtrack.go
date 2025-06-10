@@ -983,7 +983,75 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			"mimeType", d.Mime(),
 			"payloadLength", len(extPkt.Packet.Payload),
 			"timestamp", extPkt.Packet.Timestamp,
-			"sequenceNumber", extPkt.Packet.SequenceNumber)
+			"sequenceNumber", extPkt.Packet.SequenceNumber,
+			"marker", extPkt.Packet.Marker,
+			"payloadType", extPkt.Packet.PayloadType,
+			"ssrc", extPkt.Packet.SSRC,
+			"kind", d.kind,
+			"trackID", d.id,
+			"streamID", d.params.StreamID,
+			"subscriberID", d.params.SubID,
+			"isClosed", d.isClosed.Load(),
+			"isConnected", d.connected.Load(),
+			"isWritable", d.writable.Load(),
+			"isWriteStopped", d.writeStopped.Load(),
+			"isReceiverReady", d.isReceiverReady,
+			"bindState", d.bindState.Load(),
+			"clockRate", d.clockRate,
+			"isRED", d.isRED,
+			"upstreamPrimaryPT", d.upstreamPrimaryPT,
+			"primaryPT", d.primaryPT,
+			"absSendTimeExtID", d.absSendTimeExtID,
+			"transportWideExtID", d.transportWideExtID,
+			"dependencyDescriptorExtID", d.dependencyDescriptorExtID,
+			"playoutDelayExtID", d.playoutDelayExtID,
+			"absCaptureTimeExtID", d.absCaptureTimeExtID,
+			"nalType", func() uint8 {
+				if len(extPkt.Packet.Payload) > 0 {
+					return extPkt.Packet.Payload[0] & 0x1F
+				}
+				return 0
+			}(),
+			"nalUnitType", func() string {
+				if len(extPkt.Packet.Payload) > 0 {
+					nalType := extPkt.Packet.Payload[0] & 0x1F
+					switch nalType {
+					case 1:
+						return "非IDR图像的片段"
+					case 5:
+						return "IDR图像的片段"
+					case 6:
+						return "补充增强信息"
+					case 7:
+						return "序列参数集"
+					case 8:
+						return "图像参数集"
+					case 9:
+						return "分界符"
+					case 10:
+						return "序列结束"
+					case 11:
+						return "流结束"
+					case 12:
+						return "填充"
+					case 24:
+						return "STAP-A"
+					case 28:
+						return "FU-A"
+					default:
+						return fmt.Sprintf("未知类型(%d)", nalType)
+					}
+				}
+				return "未知"
+			}(),
+			"isKeyFrame", func() bool {
+				if len(extPkt.Packet.Payload) > 0 {
+					nalType := extPkt.Packet.Payload[0] & 0x1F
+					return nalType == 5 || (nalType == 28 && len(extPkt.Packet.Payload) > 1 && (extPkt.Packet.Payload[1]&0x80) != 0)
+				}
+				return false
+			}(),
+		)
 		rtpPacket := &rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,
