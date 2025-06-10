@@ -53,13 +53,13 @@ func (m *H264FrameManager) AddPacket(packet *rtp.Packet) error {
 
 	// 检查SSRC和PayloadType是否匹配
 	if m.ssrc != 0 && m.ssrc != packet.SSRC {
-		m.logger.Errorw("SSRC不匹配",
+		m.logger.Errorw("SSRC不匹配", errors.New("SSRC mismatch"),
 			"expected_ssrc", m.ssrc,
 			"received_ssrc", packet.SSRC)
 		return errors.New("SSRC mismatch")
 	}
 	if m.pt != 0 && m.pt != packet.PayloadType {
-		m.logger.Errorw("PayloadType不匹配",
+		m.logger.Errorw("PayloadType不匹配", errors.New("payload type mismatch"),
 			"expected_pt", m.pt,
 			"received_pt", packet.PayloadType)
 		return errors.New("payload type mismatch")
@@ -76,7 +76,7 @@ func (m *H264FrameManager) AddPacket(packet *rtp.Packet) error {
 
 	// 检查序列号是否连续
 	if m.lastSeq != 0 && packet.SequenceNumber != m.lastSeq+1 {
-		m.logger.Warnw("序列号不连续",
+		m.logger.Warnw("序列号不连续", errors.New("sequence number not continuous"),
 			"last_sequence", m.lastSeq,
 			"current_sequence", packet.SequenceNumber,
 			"gap", packet.SequenceNumber-m.lastSeq)
