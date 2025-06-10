@@ -375,6 +375,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
 		frameProcessor:      processing.NewSimpleProcessor(params.Logger),
+		frameManager:        NewH264FrameManager(params.Logger), // 初始化 frameManager
 	}
 	codec := codecs[0].RTPCodecCapability
 	d.codec.Store(codec)
@@ -1006,7 +1007,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		// 如果是H264编码，使用帧管理器处理
-		if d.frameManager != nil {
+		if d.frameManager != nil && d.Mime() == mime.MimeTypeH264 {
 			// 添加RTP包到帧管理器
 			err := d.frameManager.AddPacket(rtpPacket)
 			if err != nil {
