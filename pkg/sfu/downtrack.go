@@ -999,19 +999,19 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		// 处理RTP包
-		if d.frameProcessor != nil {
-			d.params.Logger.Infow("开始处理RTP包")
-			response, err := d.frameProcessor.ProcessRTP(rtpPacket)
-			if err != nil {
-				d.params.Logger.Errorw("failed to process RTP packet", err)
-				return err
-			}
-			if response != nil {
-				// 使用处理后的数据
-				rtpPacket.Payload = response.Data
-				rtpPacket.Timestamp = response.Timestamp
-			}
-		}
+		// if d.frameProcessor != nil {
+		// 	d.params.Logger.Infow("开始处理RTP包")
+		// 	response, err := d.frameProcessor.ProcessRTP(rtpPacket)
+		// 	if err != nil {
+		// 		d.params.Logger.Errorw("failed to process RTP packet", err)
+		// 		return err
+		// 	}
+		// 	if response != nil {
+		// 		// 使用处理后的数据
+		// 		rtpPacket.Payload = response.Data
+		// 		rtpPacket.Timestamp = response.Timestamp
+		// 	}
+		// }
 
 		// 如果是H264编码，使用帧管理器处理
 		if d.frameManager != nil && d.Mime() == mime.MimeTypeH264 {
@@ -1038,49 +1038,49 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 					"frameLength", len(completeFrame),
 					"timestamp", rtpPacket.Timestamp)
 
-				// 处理完整帧
-				processed, err := d.frameProcessor.ProcessFrame(&processing.ProcessRequest{
-					RawFrame:     completeFrame,
-					Timestamp:    rtpPacket.Timestamp,
-					OutputFormat: processing.Format3D,
-					Params: processing.ProcessingParams{
-						Disparity:   30,
-						PopoutRatio: 0.5,
-						TargetRes: processing.Resolution{
-							Width:  1080,
-							Height: 1920,
-						},
-					},
-				})
-				if err != nil {
-					d.params.Logger.Errorw("帧处理失败", err)
-					return ErrFrameProcess
-				}
+				// // 处理完整帧
+				// processed, err := d.frameProcessor.ProcessFrame(&processing.ProcessRequest{
+				// 	RawFrame:     completeFrame,
+				// 	Timestamp:    rtpPacket.Timestamp,
+				// 	OutputFormat: processing.Format3D,
+				// 	Params: processing.ProcessingParams{
+				// 		Disparity:   30,
+				// 		PopoutRatio: 0.5,
+				// 		TargetRes: processing.Resolution{
+				// 			Width:  1080,
+				// 			Height: 1920,
+				// 		},
+				// 	},
+				// })
+				// if err != nil {
+				// 	d.params.Logger.Errorw("帧处理失败", err)
+				// 	return ErrFrameProcess
+				// }
 
-				d.params.Logger.Infow("帧处理完成", 
-					"processedLength", len(processed.Data),
-					"originalLength", len(rtpPacket.Payload))
+				// d.params.Logger.Infow("帧处理完成", 
+				// 	"processedLength", len(processed.Data),
+				// 	"originalLength", len(rtpPacket.Payload))
 
-				// 使用 RTPPacketizer 将处理后的帧分片成 RTP 包
-				packetizer := NewRTPPacketizer(d.params.Logger, rtpPacket.SSRC, uint8(rtpPacket.PayloadType))
-				packets, err := packetizer.Packetize(processed.Data, rtpPacket.Timestamp)
-				if err != nil {
-					d.params.Logger.Errorw("RTP包分片失败", err)
-					return err
-				}
+				// // 使用 RTPPacketizer 将处理后的帧分片成 RTP 包
+				// packetizer := NewRTPPacketizer(d.params.Logger, rtpPacket.SSRC, uint8(rtpPacket.PayloadType))
+				// packets, err := packetizer.Packetize(processed.Data, rtpPacket.Timestamp)
+				// if err != nil {
+				// 	d.params.Logger.Errorw("RTP包分片失败", err)
+				// 	return err
+				// }
 
-				// 发送所有分片包
-				for _, packet := range packets {
-					_, err = d.writeStream.WriteRTP(&packet.Header, packet.Payload)
-					if err != nil {
-						d.params.Logger.Errorw("写入RTP包失败", err)
-						return err
-					}
-				}
+				// // 发送所有分片包
+				// for _, packet := range packets {
+				// 	_, err = d.writeStream.WriteRTP(&packet.Header, packet.Payload)
+				// 	if err != nil {
+				// 		d.params.Logger.Errorw("写入RTP包失败", err)
+				// 		return err
+				// 	}
+				// }
 
-				// 释放内存块
-				PacketFactory.Put(poolEntity)
-				return nil
+				// // 释放内存块
+				// PacketFactory.Put(poolEntity)
+				// return nil
 			}
 		}
 	}
